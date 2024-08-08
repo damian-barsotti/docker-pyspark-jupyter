@@ -14,6 +14,5 @@ VER="$BASE_VER.1"
 
 IMAGE=pyspark-jupyter
 
-#EXTRA_ARGS="--no-cache"
-
-docker build --tag $OWNER/$IMAGE:$VER -f "$DIRNAME"/dockerfiles/Dockerfile --progress plain $EXTRA_ARGS "$DIRNAME"/context
+docker build --tag $OWNER/$IMAGE:$VER -f "$DIRNAME"/dockerfiles/Dockerfile \
+    --progress plain "$@" "$DIRNAME"/context

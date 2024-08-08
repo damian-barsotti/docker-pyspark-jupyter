@@ -13,5 +13,5 @@ VER="$BASE_VER.1"
 IMAGE=pyspark-jupyter
 
 exec docker run -it --rm -p 8888:8888 \
-    $OWNER/$IMAGE:$VER #start.sh
+    $OWNER/$IMAGE:$VER "$@"
 
