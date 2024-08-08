@@ -190,6 +190,9 @@ ENV SPARK_HOME=/usr/local/spark
 ENV PATH="${PATH}:${SPARK_HOME}/bin"
 ENV SPARK_OPTS="--driver-java-options=-Xms1024M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info"
 
+# Uncomment to load always the package
+# ENV PYSPARK_SUBMIT_ARGS="--packages graphframes:graphframes:0.8.3-spark3.4-s_2.13 pyspark-shell"
+
 COPY setup_spark.py /opt/setup-scripts/
 
 # Setup Spark
