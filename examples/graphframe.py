@@ -1,8 +1,9 @@
-from graphframes import *
 from pyspark.sql import SparkSession
 
 spark = SparkSession.builder.appName("SimpleApp").config(
     'spark.jars.packages', 'graphframes:graphframes:0.8.3-spark3.4-s_2.13').getOrCreate()
+
+from graphframes import *
 
 v = spark.createDataFrame([
     ("a", "Alice", 34),
