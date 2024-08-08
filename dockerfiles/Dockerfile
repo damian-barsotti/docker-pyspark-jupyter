@@ -7,6 +7,8 @@ LABEL maintainer="Damian Barsotti <damian.barsotti@unc.edu.ar>"
 ARG PYTHON_VERSION=3.9
 ARG spark_version=3.4.3
 ARG scala_version=2.13
+ARG hadoop_version="3"
+ARG openjdk_version="11"
 ARG spark_download_url=https://archive.apache.org/dist/spark/
 
 
@@ -26,7 +28,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update --yes && \
     # - apt-get upgrade is run to patch known vulnerabilities in apt-get packages as
     #   the ubuntu base image is rebuilt too seldom sometimes (less than once a month)
-    apt-get upgrade --yes && \
+    # apt-get upgrade --yes && \
     apt-get install --yes --no-install-recommends \
     # - bzip2 is necessary to extract the micromamba executable.
     bzip2 \
@@ -37,7 +39,7 @@ RUN apt-get update --yes && \
     #   processes and such of the actual executable we want to start, see
     #   https://github.com/krallin/tini#why-tini for details.
     tini \
-    wget \
+    curl \
     fonts-liberation && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen
@@ -76,13 +78,10 @@ RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
     fix-permissions "${HOME}" && \
     fix-permissions "${CONDA_DIR}"
 
-RUN mkdir /usr/local/bin/before-start-root.d /usr/local/bin/before-start-user.d
+RUN mkdir /usr/local/bin/start-notebook.d && \
+    mkdir /usr/local/bin/before-notebook.d
 
-COPY 01_activate-conda-env.sh /usr/local/bin/before-start-user.d/
-
-RUN apt-get install --yes --no-install-recommends \
-    openjdk-11-jre-headless\
-    screen
+COPY 10activate-conda-env.sh /usr/local/bin/before-notebook.d/
 
 USER ${NB_UID}
 
@@ -112,7 +111,7 @@ RUN set -x && \
         # Should be simpler, see <https://github.com/mamba-org/mamba/issues/1437>
         arch="64"; \
     fi && \
-    wget --progress=dot:giga -O /tmp/micromamba.tar.bz2 \
+    curl --progress-bar --location --output /tmp/micromamba.tar.bz2 \
         "https://micromamba.snakepit.net/api/micromamba/linux-${arch}/${MAMBA_VERSION}" && \
     tar -xvjf /tmp/micromamba.tar.bz2 --strip-components=1 bin/micromamba && \
     rm /tmp/micromamba.tar.bz2 && \
@@ -150,7 +149,10 @@ RUN mamba install --yes --file requirements-jupyter.txt && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
-ENTRYPOINT ["tini", "-g", "--"]
+# Copy local files as late as possible to avoid cache busting
+COPY run-hooks.sh start.sh /usr/local/bin/
+
+ENTRYPOINT ["tini", "-g", "--", "start.sh"]
 
 ENV JUPYTER_PORT=8888
 EXPOSE $JUPYTER_PORT
@@ -172,7 +174,50 @@ RUN fix-permissions /etc/jupyter/
 HEALTHCHECK --interval=3s --timeout=1s --start-period=3s --retries=3 \
     CMD /etc/jupyter/docker_healthcheck.py || exit 1
 
-# Switch back to jovyan to avoid accidental container runs as root
+WORKDIR "${HOME}"
+
+## Pyspark
+##########
+
+USER root
+
+RUN apt-get install --yes --no-install-recommends \
+    "openjdk-${openjdk_version}-jre-headless" \
+    ca-certificates-java && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ENV SPARK_HOME=/usr/local/spark
+ENV PATH="${PATH}:${SPARK_HOME}/bin"
+ENV SPARK_OPTS="--driver-java-options=-Xms1024M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info"
+
+COPY setup_spark.py /opt/setup-scripts/
+
+# Setup Spark
+RUN /opt/setup-scripts/setup_spark.py \
+    --spark-version="${spark_version}" \
+    --hadoop-version="${hadoop_version}" \
+    --scala-version="${scala_version}" \
+    --spark-download-url="${spark_download_url}"
+
+# Configure IPython system-wide
+COPY ipython_kernel_config.py "/etc/ipython/"
+RUN fix-permissions "/etc/ipython/"
+
 USER ${NB_UID}
 
+# Install pyarrow
+# NOTE: It's important to ensure compatibility between Pandas versions.
+# The pandas version in this Dockerfile should match the version
+# on which the Pandas API for Spark is built.
+# To find the right version:
+# 1. Check out the Spark branch you are on: <https://github.com/apache/spark>
+# 2. Find the pandas version in the file `dev/infra/Dockerfile`.
+COPY --chown="${NB_UID}:${NB_GID}" requirements-pyspark.txt .
+
+RUN mamba install --yes --file requirements-pyspark.txt &&\
+    mamba clean --all -f -y && \
+    fix-permissions "${CONDA_DIR}" && \
+    fix-permissions "/home/${NB_USER}"
+
 WORKDIR "${HOME}"
+EXPOSE 4040
