@@ -138,9 +138,8 @@ COPY start.sh /usr/local/bin/
 
 WORKDIR "${HOME}"
 
-COPY --chown="${NB_UID}:${NB_GID}" requirements-jupyter.txt .
-
-RUN mamba install --yes --file requirements-jupyter.txt && \
+RUN --mount=source=requirements-jupyter.txt,target=/tmp/requirements-jupyter.txt \
+    mamba install --yes --file /tmp/requirements-jupyter.txt && \
     jupyter server --generate-config && \
     mamba clean --all -f -y && \
     npm cache clean --force && \
@@ -215,9 +214,9 @@ USER ${NB_UID}
 # To find the right version:
 # 1. Check out the Spark branch you are on: <https://github.com/apache/spark>
 # 2. Find the pandas version in the file `dev/infra/Dockerfile`.
-COPY --chown="${NB_UID}:${NB_GID}" requirements-pyspark.txt .
 
-RUN mamba install --yes --file requirements-pyspark.txt &&\
+RUN --mount=source=requirements-pyspark.txt,target=/tmp/requirements-pyspark.txt \
+    mamba install --yes --file /tmp/requirements-pyspark.txt &&\
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
